@@ -1,61 +1,74 @@
-import numpy as np
-import matplotlib.pyplot as plt
+'''
+A logistic regression learning algorithm example using TensorFlow library.
+This example is using the MNIST database of handwritten digits
+(http://yann.lecun.com/exdb/mnist/)
 
-np.random.seed(12)
-num_observations = 5000
+Author: Aymeric Damien
+Project: https://github.com/aymericdamien/TensorFlow-Examples/
+'''
 
-x1 = np.random.multivariate_normal([0, 0], [[1, .75],[.75, 1]],
-        num_observations)
-x2 = np.random.multivariate_normal([1, 4], [[1, .75],[.75, 1]],
-        num_observations)
+from __future__ import print_function
 
-simulated_separableish_features = np.vstack((x1, x2)).astype(np.float32)
-simulated_labels = np.hstack((np.zeros(num_observations),
-                                  np.ones(num_observations)))
+import tensorflow as tf
 
-plt.figure(figsize=(12,8))
-plt.scatter(simulated_separableish_features[:, 0],
-        simulated_separableish_features[:, 1],
-                    c = simulated_labels, alpha = .4)
+# Import MNIST data
+from tensorflow.examples.tutorials.mnist import input_data
+mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
 
-def sigmoid(scores):
-    return 1 / (1 + np.exp(-scores))
+# Parameters
+learning_rate = 0.01
+training_epochs = 25
+batch_size = 100
+display_step = 1
 
-def log_likelihood(features, target, weights):
-    scores = np.dot(features, weights)
-    ll = np.sum( target * scores - np.log(1 + np.exp(scores)))
-    return ll
+# tf Graph Input
+x = tf.placeholder(tf.float32, [None, 784]) # mnist data image of shape 28*28=784
+y = tf.placeholder(tf.float32, [None, 10]) # 0-9 digits recognition => 10 classes
 
-def logistic_regression(features, target, num_steps, learning_rate,
-        add_intercept = False):
-    if add_intercept:
-        intercept = np.ones((features.shape[0], 1))
-        features = np.hstack((intercept, features))
+# Set model weights
+W = tf.Variable(tf.zeros([784, 10]))
+b = tf.Variable(tf.zeros([10]))
 
-    weights = np.zeros(features.shape[1])
+# Construct model
+pred = tf.nn.softmax(tf.matmul(x, W) + b) # Softmax
 
-    for step in range(num_steps):
-        scores = np.dot(features, weights)
-        predictions = sigmoid(scores)
+# Minimize error using cross entropy
+cost = tf.reduce_mean(-tf.reduce_sum(y*tf.log(pred), reduction_indices=1))
+# Gradient Descent
+optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(cost)
 
-        # Update weights
-        output_error_signal = target - predictions
-        gradient = np.dot(features.T, output_error_signal)
-        weights += learning_rate * gradient
+# Initialize the variables (i.e. assign their default value)
+init = tf.global_variables_initializer()
 
-        if step % 10000 == 0:
-            print(log_likelihood(features, target, weights))
+saver = tf.train.Saver()
 
-    return weights
+# Start training
+with tf.Session() as sess:
 
-weights = logistic_regression(simulated_separableish_features,
-        simulated_labels, num_steps = 300000, learning_rate = 5e-5,
-        add_intercept = True)
+    # Run the initializer
+    sess.run(init)
 
-data_with_intercept = np.hstack((np.ones((simulated_separableish_features.shape[0], 1)),
-                                     simulated_separableish_features))
-final_scores = np.dot(data_with_intercept, weights)
-preds = np.round(sigmoid(final_scores))
+    # Training cycle
+    for epoch in range(training_epochs):
+        avg_cost = 0.
+        total_batch = int(mnist.train.num_examples/batch_size)
+        # Loop over all batches
+        for i in range(total_batch):
+            batch_xs, batch_ys = mnist.train.next_batch(batch_size)
+            # Run optimization op (backprop) and cost op (to get loss value)
+            _, c = sess.run([optimizer, cost], feed_dict={x: batch_xs,
+                                                          y: batch_ys})
+            # Compute average loss
+            avg_cost += c / total_batch
+        # Display logs per epoch step
+        if (epoch+1) % display_step == 0:
+            print("Epoch:", '%04d' % (epoch+1), "cost=", "{:.9f}".format(avg_cost))
+            save_path = saver.save(sess, "data/checkpoints/model.ckpt")
 
-print('Accuracy from scratch: {0}'.format((preds == simulated_labels).sum().astype(float) / len(preds)))
+    print("Optimization Finished!")
 
+    # Test model
+    correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
+    # Calculate accuracy
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    print("Accuracy:", accuracy.eval({x: mnist.test.images, y: mnist.test.labels}))
